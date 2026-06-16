@@ -2,3 +2,6 @@ node_modules/
 generations/
 db.json
 config.json
+.env
+eyes_edit_test.png
+multiref_test.png

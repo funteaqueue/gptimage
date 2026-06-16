@@ -1,0 +1,21 @@
+services:
+  imgpt:
+    build: .
+    image: imgpt:latest
+    container_name: imgpt
+    restart: unless-stopped
+    ports:
+      # host:container — change the host port (left) as needed on your server.
+      - "4317:4317"
+    environment:
+      # Recommended for prod: provide the key here instead of the Settings UI.
+      # Set it in a .env file next to this compose file (G0I_API_KEY=sk-...).
+      G0I_API_KEY: ${G0I_API_KEY:-}
+      PORT: "4317"
+      DATA_DIR: /data
+    volumes:
+      # Named volume keeps history, saved images and config across restarts.
+      - imgpt-data:/data
+
+volumes:
+  imgpt-data:

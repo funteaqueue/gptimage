@@ -12,9 +12,15 @@ const API_BASE = "https://api.g0i.ai/v1";
 // Returned image URLs are relative (e.g. /api/generated/x.png) and served from
 // this host, behind the same Bearer auth as the API.
 const IMAGE_HOST = "https://g0i.ai";
-const GEN_DIR = path.join(__dirname, "generations");
-const DB_FILE = path.join(__dirname, "db.json");
-const CONFIG_FILE = path.join(__dirname, "config.json");
+// Persisted data lives here. Defaults to the app directory for local runs;
+// in Docker set DATA_DIR=/data and mount a volume so generations + history
+// survive container restarts.
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : __dirname;
+const GEN_DIR = path.join(DATA_DIR, "generations");
+const DB_FILE = path.join(DATA_DIR, "db.json");
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 
 // ---------------------------------------------------------------------------
 // Small helpers
