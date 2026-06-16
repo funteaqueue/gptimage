@@ -31,6 +31,11 @@ const els = {
   apiKeyInput: $("apiKeyInput"),
   saveKeyBtn: $("saveKeyBtn"),
   keyStatus: $("keyStatus"),
+  lightbox: $("lightbox"),
+  lightboxImg: $("lightboxImg"),
+  lightboxClose: $("lightboxClose"),
+  lightboxPrev: $("lightboxPrev"),
+  lightboxNext: $("lightboxNext"),
 };
 
 // Active reference images (data URLs). Multiple → combined as an edit.
@@ -366,8 +371,7 @@ async function openDetail(id) {
 
   const imgs = rec.images
     .map(
-      (f) =>
-        `<a href="/generations/${f}" target="_blank"><img src="/generations/${f}" alt=""></a>`
+      (f) => `<img class="zoomable" src="/generations/${f}" alt="">`
     )
     .join("");
 
@@ -384,7 +388,7 @@ async function openDetail(id) {
            ${refFiles
              .map(
                (f) =>
-                 `<a href="/generations/${f}" target="_blank"><img src="/generations/${f}" alt="reference"></a>`
+                 `<img class="zoomable" src="/generations/${f}" alt="reference">`
              )
              .join("")}
          </div>
@@ -454,6 +458,14 @@ async function openDetail(id) {
     await loadHistory();
   });
 
+  // Clicking any image in the detail opens the lightbox; arrows cycle through
+  // all images shown (results + references).
+  const zoomables = [...els.detailBody.querySelectorAll("img.zoomable")];
+  const srcs = zoomables.map((img) => img.src);
+  zoomables.forEach((img, i) => {
+    img.addEventListener("click", () => openLightbox(srcs, i));
+  });
+
   els.detailModal.hidden = false;
 }
 
@@ -463,6 +475,57 @@ function closeDetail() {
 els.detailClose.addEventListener("click", closeDetail);
 els.detailModal.addEventListener("click", (e) => {
   if (e.target === els.detailModal) closeDetail();
+});
+
+// ---------------------------------------------------------------------------
+// Lightbox
+// ---------------------------------------------------------------------------
+
+let lightboxSrcs = [];
+let lightboxIdx = 0;
+
+function openLightbox(srcs, idx) {
+  lightboxSrcs = srcs;
+  lightboxIdx = idx;
+  els.lightboxImg.src = srcs[idx];
+  const multi = srcs.length > 1;
+  els.lightboxPrev.hidden = !multi;
+  els.lightboxNext.hidden = !multi;
+  els.lightbox.hidden = false;
+}
+
+function closeLightbox() {
+  els.lightbox.hidden = true;
+  els.lightboxImg.src = "";
+}
+
+function lightboxStep(delta) {
+  if (lightboxSrcs.length < 2) return;
+  lightboxIdx =
+    (lightboxIdx + delta + lightboxSrcs.length) % lightboxSrcs.length;
+  els.lightboxImg.src = lightboxSrcs[lightboxIdx];
+}
+
+function lightboxOpen() {
+  return !els.lightbox.hidden;
+}
+
+// Close on backdrop click; image and buttons stop propagation.
+els.lightbox.addEventListener("click", (e) => {
+  if (e.target === els.lightbox) closeLightbox();
+});
+els.lightboxImg.addEventListener("click", (e) => e.stopPropagation());
+els.lightboxClose.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeLightbox();
+});
+els.lightboxPrev.addEventListener("click", (e) => {
+  e.stopPropagation();
+  lightboxStep(-1);
+});
+els.lightboxNext.addEventListener("click", (e) => {
+  e.stopPropagation();
+  lightboxStep(1);
 });
 
 // ---------------------------------------------------------------------------
@@ -538,6 +601,13 @@ function formatDate(iso) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 document.addEventListener("keydown", (e) => {
+  // Lightbox takes priority: Esc closes it, arrows navigate.
+  if (lightboxOpen()) {
+    if (e.key === "Escape") closeLightbox();
+    else if (e.key === "ArrowLeft") lightboxStep(-1);
+    else if (e.key === "ArrowRight") lightboxStep(1);
+    return;
+  }
   if (e.key === "Escape") {
     closeDetail();
     els.settingsModal.hidden = true;
