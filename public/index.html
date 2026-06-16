@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>imgpt · image generator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot"></span> imgpt
+      </div>
+      <button id="settingsBtn" class="ghost-btn" title="Settings">⚙ Settings</button>
+    </header>
+
+    <main class="layout">
+      <!-- Compose panel -->
+      <section class="compose">
+        <h2>Generate</h2>
+
+        <label class="field">
+          <span>Prompt</span>
+          <textarea id="prompt" rows="4" placeholder="A futuristic city at sunset, cinematic lighting"></textarea>
+        </label>
+
+        <div class="row">
+          <label class="field">
+            <span>Model</span>
+            <select id="model">
+              <option>gpt-image-2</option>
+              <option>sdxl-turbo-v3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Size</span>
+            <select id="size">
+              <option>1024x1024</option>
+              <option>1024x1792</option>
+              <option>1792x1024</option>
+            </select>
+          </label>
+          <label class="field narrow">
+            <span>Count</span>
+            <input id="count" type="number" min="1" max="4" value="1" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Reference image(s) <em>(optional · edit mode · add several to combine)</em></span>
+          <div id="dropzone" class="dropzone">
+            <input id="refInput" type="file" accept="image/*" multiple hidden />
+            <div id="dropPlaceholder" class="drop-placeholder">
+              Click or drop image(s) to guide the generation
+            </div>
+            <div id="refThumbs" class="ref-thumbs" hidden></div>
+          </div>
+        </label>
+
+        <button id="generateBtn" class="primary-btn">Generate (queue &amp; keep typing)</button>
+        <p class="hint">
+          Submit as many prompts as you like — they run in parallel and auto-retry up to 3×.
+        </p>
+        <div id="genError" class="error" hidden></div>
+
+        <div id="queueArea" class="queue-area" hidden>
+          <h3>Active</h3>
+          <div id="queueList" class="queue-list"></div>
+        </div>
+
+        <div id="resultArea" class="result-area" hidden>
+          <h3>Recent results</h3>
+          <div id="resultGrid" class="result-grid"></div>
+        </div>
+      </section>
+
+      <!-- History panel -->
+      <aside class="history">
+        <div class="history-head">
+          <h2>History</h2>
+          <span id="histCount" class="badge">0</span>
+        </div>
+        <div id="historyList" class="history-list"></div>
+        <p id="historyEmpty" class="muted">No generations yet.</p>
+      </aside>
+    </main>
+
+    <!-- Detail modal -->
+    <div id="detailModal" class="modal" hidden>
+      <div class="modal-card">
+        <button id="detailClose" class="modal-close">✕</button>
+        <div id="detailBody"></div>
+      </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div id="settingsModal" class="modal" hidden>
+      <div class="modal-card small">
+        <button id="settingsClose" class="modal-close">✕</button>
+        <h3>API Key</h3>
+        <p class="muted">
+          Stored locally in <code>config.json</code> and sent only to
+          <code>api.g0i.ai</code>.
+        </p>
+        <input id="apiKeyInput" type="password" placeholder="sk-..." />
+        <button id="saveKeyBtn" class="primary-btn">Save key</button>
+        <div id="keyStatus" class="key-status"></div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

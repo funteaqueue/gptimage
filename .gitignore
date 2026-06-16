@@ -1,0 +1,4 @@
+node_modules/
+generations/
+db.json
+config.json

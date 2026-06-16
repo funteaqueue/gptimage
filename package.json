@@ -1,0 +1,13 @@
+{
+  "name": "imgpt",
+  "version": "1.0.0",
+  "description": "Simple image generator interface (g0i.ai / NanoBanana)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
