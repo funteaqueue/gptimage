@@ -131,6 +131,95 @@ textarea {
   resize: vertical;
 }
 
+/* Prompt field header + magic-wand refine */
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.field-head > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.wand-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.wand-btn:hover {
+  border-color: var(--accent);
+}
+.wand-btn.open {
+  border-color: var(--accent);
+  background: #1a1d29;
+}
+.refine-panel {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.refine-panel .field {
+  margin-bottom: 12px;
+}
+.refine-panel .field:last-of-type {
+  margin-bottom: 0;
+}
+.preset-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.preset-row .field {
+  flex: 1;
+  margin-bottom: 12px;
+}
+.preset-row .scope-field {
+  flex: 0 0 110px;
+}
+.preset-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.mode-tag {
+  font-size: 11px;
+  color: var(--accent);
+  background: #6d8bff1f;
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+.refine-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.primary-btn.auto {
+  width: auto;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+.refine-status {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+}
+.refine-status.error {
+  color: var(--danger);
+}
+
 .row {
   display: flex;
   gap: 12px;
@@ -244,6 +333,11 @@ textarea {
 }
 .ghost-btn:hover {
   border-color: var(--accent);
+}
+.ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: var(--border);
 }
 
 .error {

@@ -19,10 +19,70 @@
       <section class="compose">
         <h2>Generate</h2>
 
-        <label class="field">
-          <span>Prompt</span>
+        <div class="field">
+          <div class="field-head">
+            <span>Prompt</span>
+            <button id="refineBtn" type="button" class="wand-btn" title="Refine prompt with AI">🪄 Refine</button>
+          </div>
           <textarea id="prompt" rows="4" placeholder="A futuristic city at sunset, cinematic lighting"></textarea>
-        </label>
+
+          <div id="refinePanel" class="refine-panel" hidden>
+            <div class="row">
+              <label class="field">
+                <span>Model <em>(use a vision model when an image is attached)</em></span>
+                <select id="refineModel">
+                  <option value="">Loading models…</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Image <em>(optional · described / used as a reference for the result)</em></span>
+              <div id="describeZone" class="dropzone">
+                <input id="describeInput" type="file" accept="image/*" hidden />
+                <div id="describePlaceholder" class="drop-placeholder">
+                  Click or drop an image to use
+                </div>
+                <div id="describeThumbs" class="ref-thumbs" hidden></div>
+              </div>
+            </label>
+
+            <div class="preset-row">
+              <label class="field">
+                <span>Preset <span id="presetMode" class="mode-tag"></span></span>
+                <select id="presetSelect"></select>
+              </label>
+              <label class="field scope-field">
+                <span>Scope</span>
+                <select id="presetScope">
+                  <option value="text">No image</option>
+                  <option value="image">Image</option>
+                  <option value="both">Both</option>
+                </select>
+              </label>
+              <div class="preset-actions">
+                <button id="presetNewBtn" type="button" class="ghost-btn small" title="Create a new preset">+ New</button>
+                <button id="presetRenameBtn" type="button" class="ghost-btn small" title="Rename this preset">Rename</button>
+                <button id="presetDeleteBtn" type="button" class="ghost-btn small" title="Delete this preset">Delete</button>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Instructions <em>(edits are saved to the selected preset)</em></span>
+              <textarea id="refineInstructions" rows="5"></textarea>
+            </label>
+
+            <label class="field">
+              <span>Adjustments <em>(optional · what to change, add, or emphasize)</em></span>
+              <textarea id="adjustments" rows="2" placeholder="e.g. make it night-time, add a red hat, remove the background"></textarea>
+            </label>
+
+            <div class="refine-actions">
+              <button id="refineRun" type="button" class="primary-btn auto">✨ Run → prompt</button>
+            </div>
+            <div id="refineStatus" class="refine-status" hidden></div>
+          </div>
+        </div>
 
         <div class="row">
           <label class="field">

@@ -213,6 +213,141 @@ app.delete("/api/generations/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// List available models from the provider (used to populate the prompt-refine
+// model selector). Returns just the ids, sorted.
+app.get("/api/models", async (_req, res) => {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    return res.status(400).json({ error: "No API key configured." });
+  }
+  try {
+    const apiRes = await fetch(`${API_BASE}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const json = await apiRes.json().catch(() => ({}));
+    if (!apiRes.ok) {
+      const msg = json?.error?.message || json?.error || `API error ${apiRes.status}`;
+      return res.status(apiRes.status).json({ error: msg });
+    }
+    const models = (json.data || [])
+      .map((m) => m.id)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    res.json({ models });
+  } catch (err) {
+    res.status(502).json({ error: `Request failed: ${err.message}` });
+  }
+});
+
+// POST a chat completion and return both the response and parsed JSON.
+async function chatCompletion(apiKey, body) {
+  const apiRes = await fetch(`${API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await apiRes.json().catch(() => ({}));
+  return { apiRes, json };
+}
+
+// Clean a model's text reply: unwrap a whole-response code fence and strip a
+// single layer of surrounding quotes/backticks some models add.
+function cleanModelText(raw) {
+  let text = (raw || "").trim();
+  const fence = text.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n?```$/);
+  if (fence) text = fence[1].trim();
+  text = text.replace(/^["'`]+|["'`]+$/g, "").trim();
+  return text;
+}
+
+// Unified prompt transform. Takes any combination of an optional reference
+// image, a source prompt, and free-form adjustments, plus the active preset's
+// `instructions` (system message) and a `model`. The model's reply becomes the
+// new prompt. Image present → uses a vision model via image_url; the same
+// endpoint handles describe (image only), refine (prompt only), and combined.
+app.post("/api/transform", async (req, res) => {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    return res.status(400).json({ error: "No API key configured." });
+  }
+  const { model, instructions, prompt, adjustments, image } = req.body || {};
+  if (!model || !model.trim()) {
+    return res.status(400).json({ error: "model is required" });
+  }
+
+  const hasImage = typeof image === "string" && image.startsWith("data:");
+  const p = (prompt || "").trim();
+  const adj = (adjustments || "").trim();
+  if (!hasImage && !p && !adj) {
+    return res
+      .status(400)
+      .json({ error: "Provide an image, a prompt, or adjustments." });
+  }
+
+  const system =
+    (instructions && instructions.trim()) ||
+    "Describe the subject in vivid, concrete detail. Output only the description.";
+
+  // Compose the materials the model should work from.
+  const parts = [];
+  if (p) parts.push(`Source prompt / description:\n${p}`);
+  if (adj)
+    parts.push(
+      `Adjustments to apply (add, change, or remove exactly as specified):\n${adj}`
+    );
+  if (hasImage && !p)
+    parts.push("Use the provided image as the basis for your output.");
+  const userText = parts.join("\n\n") || "Follow the system instructions.";
+
+  const userContent = hasImage
+    ? [
+        { type: "text", text: userText },
+        { type: "image_url", image_url: { url: image } },
+      ]
+    : userText;
+
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: userContent },
+  ];
+
+  try {
+    let { apiRes, json } = await chatCompletion(apiKey, {
+      model,
+      messages,
+      max_tokens: 2048,
+      temperature: 0.7,
+    });
+    // Some models (e.g. claude-opus-4-8) deprecate `temperature` and reject it.
+    // Retry once without it.
+    const msg0 = json?.error?.message || json?.error || "";
+    if (!apiRes.ok && /temperature/i.test(String(msg0))) {
+      ({ apiRes, json } = await chatCompletion(apiKey, {
+        model,
+        messages,
+        max_tokens: 2048,
+      }));
+    }
+    if (!apiRes.ok) {
+      const msg = json?.error?.message || json?.error || `API error ${apiRes.status}`;
+      return res.status(apiRes.status).json({ error: msg });
+    }
+    const text = cleanModelText(json?.choices?.[0]?.message?.content);
+    if (!text) {
+      return res.status(502).json({
+        error:
+          "Model returned an empty response. If using an image, pick a vision-capable model.",
+      });
+    }
+    res.json({ prompt: text });
+  } catch (err) {
+    res.status(502).json({ error: `Request failed: ${err.message}` });
+  }
+});
+
 // Generate images.
 app.post("/api/generate", async (req, res) => {
   const apiKey = await getApiKey();
@@ -289,8 +424,15 @@ app.post("/api/generate", async (req, res) => {
         .json({ error: `Unexpected API response: ${text.slice(0, 300)}` });
     }
     if (!apiRes.ok) {
-      const msg =
-        apiJson?.error?.message || apiJson?.error || `API error ${apiRes.status}`;
+      const e = apiJson?.error;
+      let msg = e?.message || e || `API error ${apiRes.status}`;
+      // gpt-image-2 etc. are served upstream by other models; when those are
+      // rate-limited g0i returns model_cooldown naming its internal model.
+      // Re-phrase around the model the user actually picked.
+      if (e?.code === "model_cooldown") {
+        const when = e.reset_time ? ` (resets in ${e.reset_time})` : "";
+        msg = `Model "${model}" is temporarily rate-limited upstream${when}. Try another model (e.g. sdxl-turbo-v3) or wait.`;
+      }
       return res.status(apiRes.status).json({ error: msg });
     }
   } catch (err) {

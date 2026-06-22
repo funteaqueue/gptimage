@@ -15,6 +15,23 @@ const els = {
   refThumbs: $("refThumbs"),
   generateBtn: $("generateBtn"),
   genError: $("genError"),
+  refineBtn: $("refineBtn"),
+  refinePanel: $("refinePanel"),
+  refineModel: $("refineModel"),
+  refineInstructions: $("refineInstructions"),
+  refineRun: $("refineRun"),
+  refineStatus: $("refineStatus"),
+  adjustments: $("adjustments"),
+  presetSelect: $("presetSelect"),
+  presetScope: $("presetScope"),
+  presetMode: $("presetMode"),
+  presetNewBtn: $("presetNewBtn"),
+  presetRenameBtn: $("presetRenameBtn"),
+  presetDeleteBtn: $("presetDeleteBtn"),
+  describeZone: $("describeZone"),
+  describeInput: $("describeInput"),
+  describePlaceholder: $("describePlaceholder"),
+  describeThumbs: $("describeThumbs"),
   queueArea: $("queueArea"),
   queueList: $("queueList"),
   resultArea: $("resultArea"),
@@ -184,11 +201,358 @@ function enqueue() {
   jobs.set(job.id, job);
   renderQueue();
 
-  // Clear the prompt so the user can immediately type & queue the next one.
-  els.prompt.value = "";
+  // Keep the prompt so the user can tweak it for the next iteration.
+  // Select it all so typing over replaces it, but editing a few words is easy too.
   els.prompt.focus();
+  els.prompt.select();
 
   runJob(job);
+}
+
+// ---------------------------------------------------------------------------
+// Prompt builder (magic wand) — describe an image and/or refine a prompt,
+// applying adjustments, with the result written back into the prompt box.
+// ---------------------------------------------------------------------------
+
+// Built-in presets, seeded the first time (and used to re-seed if all are
+// deleted). Each preset has a `scope` controlling when it's offered:
+//   "image" — only when an image is attached
+//   "text"  — only when no image is attached
+//   "both"  — always
+const DEFAULT_PRESETS = [
+  {
+    id: "json-image",
+    name: "JSON style (image)",
+    scope: "image",
+    instructions:
+      "You are a vision assistant for AI image generation. Study the provided image and produce a single structured JSON object describing it. Use these keys: subject, setting, composition, lighting, color_palette, style, mood, details (an array of concrete visual elements), camera. Be vivid and specific. If adjustments are provided, apply them to the description. Output ONLY valid JSON — no markdown code fences, preamble, or explanation.",
+  },
+  {
+    id: "prose-image",
+    name: "Natural language (image)",
+    scope: "image",
+    instructions:
+      "You are an art director. Study the provided image and describe it as a single natural-sounding paragraph: the subject and what it's doing, the setting, the lighting and mood, the colors, and the overall style. If adjustments are provided, apply them. Output ONLY the description as plain prose — no lists, headings, quotes, or explanation.",
+  },
+  {
+    id: "json-text",
+    name: "JSON style (prompt)",
+    scope: "text",
+    instructions:
+      "You are a prompt engineer for AI image generation. Turn the source prompt into a single structured JSON object describing the intended image. Use these keys: subject, setting, composition, lighting, color_palette, style, mood, details (an array of concrete visual elements), camera. If adjustments are provided, apply them. Preserve the original intent. Output ONLY valid JSON — no markdown code fences, preamble, or explanation.",
+  },
+  {
+    id: "prose-text",
+    name: "Natural language (prompt)",
+    scope: "text",
+    instructions:
+      "You are an art director. Rewrite the source prompt as a single natural-sounding paragraph that vividly describes the intended image: subject, setting, lighting, mood, colors, and overall style. If adjustments are provided, apply them. Keep the original intent. Output ONLY the description as plain prose — no lists, headings, quotes, or explanation.",
+  },
+];
+
+const LS_PRESETS = "imgpt_refine_presets";
+const LS_ACTIVE = "imgpt_refine_active_preset";
+const LS_MODEL = "imgpt_refine_model";
+
+let modelsLoaded = false;
+// Optional reference image fed to the builder (separate from generation refs).
+let describeDataUrl = null;
+
+let presets = loadPresets();
+let activePresetId =
+  localStorage.getItem(LS_ACTIVE) &&
+  presets.some((p) => p.id === localStorage.getItem(LS_ACTIVE))
+    ? localStorage.getItem(LS_ACTIVE)
+    : null;
+
+function loadPresets() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LS_PRESETS));
+    if (Array.isArray(stored) && stored.length) {
+      // Backfill scope for presets saved before scoping existed.
+      return stored.map((p) => ({ scope: "both", ...p }));
+    }
+  } catch {
+    /* fall through to seed */
+  }
+  const seed = DEFAULT_PRESETS.map((p) => ({ ...p }));
+  localStorage.setItem(LS_PRESETS, JSON.stringify(seed));
+  return seed;
+}
+
+function savePresets() {
+  localStorage.setItem(LS_PRESETS, JSON.stringify(presets));
+}
+
+// "image" when a reference image is attached, otherwise "text".
+function currentMode() {
+  return describeDataUrl ? "image" : "text";
+}
+
+// Presets offered for the current mode (scope matches, or "both").
+function visiblePresets() {
+  const mode = currentMode();
+  return presets.filter((p) => p.scope === mode || p.scope === "both");
+}
+
+function getActivePreset() {
+  const visible = visiblePresets();
+  return (
+    visible.find((p) => p.id === activePresetId) || visible[0] || null
+  );
+}
+
+function newPresetId() {
+  return "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e4);
+}
+
+// Rebuild the preset dropdown for the current mode, keeping the active preset
+// valid for that mode, and sync the instructions box + scope selector.
+function renderPresetSelect() {
+  const mode = currentMode();
+  els.presetMode.textContent = mode === "image" ? "image mode" : "text mode";
+
+  const visible = visiblePresets();
+  const active = getActivePreset();
+  activePresetId = active ? active.id : null;
+
+  els.presetSelect.innerHTML = "";
+  if (!visible.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No preset for this mode — create one";
+    els.presetSelect.appendChild(opt);
+  } else {
+    for (const p of visible) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      els.presetSelect.appendChild(opt);
+    }
+    els.presetSelect.value = activePresetId;
+  }
+
+  els.refineInstructions.value = active ? active.instructions : "";
+  els.refineInstructions.disabled = !active;
+  if (active) els.presetScope.value = active.scope;
+  els.presetScope.disabled = !active;
+  els.presetRenameBtn.disabled = !active;
+  // Keep at least one preset in existence.
+  els.presetDeleteBtn.disabled = !active || presets.length <= 1;
+}
+
+function setActivePreset(id) {
+  activePresetId = id;
+  localStorage.setItem(LS_ACTIVE, id || "");
+  renderPresetSelect();
+}
+
+els.presetSelect.addEventListener("change", () => {
+  if (els.presetSelect.value) setActivePreset(els.presetSelect.value);
+});
+
+// Editing the instructions box edits the selected preset in place.
+els.refineInstructions.addEventListener("input", () => {
+  const active = getActivePreset();
+  if (!active) return;
+  active.instructions = els.refineInstructions.value;
+  savePresets();
+});
+
+// Changing scope re-files the preset; it may leave the current mode's view.
+els.presetScope.addEventListener("change", () => {
+  const active = getActivePreset();
+  if (!active) return;
+  active.scope = els.presetScope.value;
+  savePresets();
+  renderPresetSelect();
+});
+
+els.presetNewBtn.addEventListener("click", () => {
+  const name = (prompt("Name for the new preset:", "My preset") || "").trim();
+  if (!name) return;
+  const preset = {
+    id: newPresetId(),
+    name,
+    scope: currentMode(), // scoped to the case you're working in
+    instructions: getActivePreset()?.instructions || "",
+  };
+  presets.push(preset);
+  savePresets();
+  setActivePreset(preset.id);
+});
+
+els.presetRenameBtn.addEventListener("click", () => {
+  const current = getActivePreset();
+  if (!current) return;
+  const name = (prompt("Rename preset:", current.name) || "").trim();
+  if (!name) return;
+  current.name = name;
+  savePresets();
+  renderPresetSelect();
+});
+
+els.presetDeleteBtn.addEventListener("click", () => {
+  const current = getActivePreset();
+  if (!current || presets.length <= 1) return;
+  if (!confirm(`Delete preset "${current.name}"?`)) return;
+  presets = presets.filter((p) => p.id !== current.id);
+  savePresets();
+  setActivePreset(null); // renderPresetSelect picks the first visible
+});
+
+els.refineModel.addEventListener("change", () => {
+  localStorage.setItem(LS_MODEL, els.refineModel.value);
+});
+
+renderPresetSelect();
+
+els.refineBtn.addEventListener("click", () => {
+  const show = els.refinePanel.hidden;
+  els.refinePanel.hidden = !show;
+  els.refineBtn.classList.toggle("open", show);
+  if (show) loadModels();
+});
+
+async function loadModels() {
+  if (modelsLoaded) return;
+  try {
+    const res = await fetch("/api/models");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to load models");
+    const saved = localStorage.getItem(LS_MODEL);
+    els.refineModel.innerHTML = "";
+    for (const id of data.models) {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = id;
+      els.refineModel.appendChild(opt);
+    }
+    if (saved && data.models.includes(saved)) {
+      els.refineModel.value = saved;
+    }
+    modelsLoaded = true;
+  } catch (err) {
+    els.refineModel.innerHTML = `<option value="">${escapeHtml(
+      err.message
+    )}</option>`;
+  }
+}
+
+// --- Optional reference image for the builder ------------------------------
+// Adding/removing it flips the mode, which re-filters the preset dropdown.
+
+els.describeZone.addEventListener("click", (e) => {
+  if (e.target.closest(".ref-remove")) return;
+  els.describeInput.click();
+});
+els.describeInput.addEventListener("change", () => {
+  const file = els.describeInput.files[0];
+  if (file) loadDescribeImage(file);
+  els.describeInput.value = "";
+});
+["dragover", "dragenter"].forEach((evt) =>
+  els.describeZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    els.describeZone.classList.add("drag");
+  })
+);
+["dragleave", "drop"].forEach((evt) =>
+  els.describeZone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    els.describeZone.classList.remove("drag");
+  })
+);
+els.describeZone.addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files[0];
+  if (file) loadDescribeImage(file);
+});
+
+function loadDescribeImage(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    describeDataUrl = reader.result;
+    renderDescribeThumb();
+    renderPresetSelect(); // mode → image
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderDescribeThumb() {
+  const has = Boolean(describeDataUrl);
+  els.describeThumbs.hidden = !has;
+  els.describePlaceholder.hidden = has;
+  els.describeThumbs.innerHTML = "";
+  if (!has) return;
+  const wrap = document.createElement("div");
+  wrap.className = "ref-thumb";
+  const img = document.createElement("img");
+  img.src = describeDataUrl;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ref-remove";
+  btn.textContent = "✕";
+  btn.title = "Remove";
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    describeDataUrl = null;
+    renderDescribeThumb();
+    renderPresetSelect(); // mode → text
+  });
+  wrap.appendChild(img);
+  wrap.appendChild(btn);
+  els.describeThumbs.appendChild(wrap);
+}
+
+// --- Unified Run: image and/or prompt and/or adjustments → new prompt ------
+els.refineRun.addEventListener("click", async () => {
+  const model = els.refineModel.value;
+  if (!model) {
+    setRefineStatus("Pick a model first (use a vision model with an image).", true);
+    return;
+  }
+  const hasImage = Boolean(describeDataUrl);
+  const promptText = els.prompt.value.trim();
+  const adjustments = els.adjustments.value.trim();
+  if (!hasImage && !promptText && !adjustments) {
+    setRefineStatus("Add an image, a prompt, or some adjustments first.", true);
+    return;
+  }
+
+  els.refineRun.disabled = true;
+  setRefineStatus(
+    `<span class="spinner"></span>${hasImage ? "Reading image…" : "Working…"}`,
+    false
+  );
+  try {
+    const res = await fetch("/api/transform", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        instructions: els.refineInstructions.value,
+        prompt: promptText,
+        adjustments,
+        image: hasImage ? describeDataUrl : null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    els.prompt.value = data.prompt;
+    els.prompt.focus();
+    setRefineStatus("✓ Result written to the prompt. Edit it, then generate.", false);
+  } catch (err) {
+    setRefineStatus(err.message, true);
+  } finally {
+    els.refineRun.disabled = false;
+  }
+});
+
+function setRefineStatus(html, isError) {
+  els.refineStatus.innerHTML = html;
+  els.refineStatus.classList.toggle("error", Boolean(isError));
+  els.refineStatus.hidden = false;
 }
 
 async function runJob(job) {
@@ -212,8 +576,9 @@ async function runJob(job) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const err = new Error(data.error || `Request failed (${res.status})`);
-        // 4xx (bad prompt / model / auth) won't get better by retrying.
-        err.permanent = [400, 401, 403, 404].includes(res.status);
+        // 4xx (bad prompt / model / auth) won't get better by retrying, and a
+        // 429 cooldown lasts minutes — don't burn quick retries on either.
+        err.permanent = [400, 401, 403, 404, 429].includes(res.status);
         throw err;
       }
       // Success.
